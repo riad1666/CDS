@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { motion } from 'motion/react';
+import { auth, db } from '../../../lib/firebase';
+import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { LogIn, Sparkles, Lock, User } from 'lucide-react';
 import logo from 'figma:asset/4cad363197dac40b810de3a56251390153decb05.png';
 
@@ -10,10 +13,43 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock login - navigate to dashboard
-    navigate('/dashboard');
+    setError('');
+    setLoading(true);
+
+    try {
+      // We assume loginId is an email for Firebase Auth
+      const userCredential = await signInWithEmailAndPassword(auth, loginId, password);
+      const user = userCredential.user;
+
+      // Check user approval status in Firestore
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        if (userData.status === 'pending') {
+          await signOut(auth);
+          setError('Your account is still pending admin approval.');
+          setLoading(false);
+          return;
+        } else if (userData.status === 'rejected') {
+          await signOut(auth);
+          setError('Your account has been rejected by the admin.');
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Complete login logic - could add admin check here based on userData.role
+      navigate('/dashboard');
+    } catch (err: any) {
+      setError(err.message || 'Failed to sign in');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -52,6 +88,11 @@ export function LoginPage() {
           </motion.div>
 
           <form onSubmit={handleLogin} className="space-y-5">
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded-lg text-sm text-center">
+                {error}
+              </div>
+            )}
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 1, x: 0 }}
@@ -111,7 +152,7 @@ export function LoginPage() {
             >
               <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
               <LogIn size={22} />
-              Sign In
+              {loading ? 'Signing In...' : 'Sign In'}
             </motion.button>
           </form>
 

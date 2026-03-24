@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { motion } from 'motion/react';
+import { auth, db, storage } from '../../../lib/firebase';
+import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { doc, setDoc } from 'firebase/firestore';
+import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { UserPlus, Upload, Sparkles, User, Mail, Lock, CreditCard } from 'lucide-react';
 import logo from 'figma:asset/4cad363197dac40b810de3a56251390153decb05.png';
 
@@ -15,10 +19,55 @@ export function RegisterPage() {
   });
   const [profileImage, setProfileImage] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock registration - navigate to login
-    navigate('/');
+    setError('');
+    
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      // Create user in Auth
+      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+      const user = userCredential.user;
+
+      let avatarUrl = '';
+      if (profileImage) {
+        // Upload profile image to Firebase Storage
+        const imageRef = ref(storage, `avatars/${user.uid}`);
+        await uploadString(imageRef, profileImage, 'data_url');
+        avatarUrl = await getDownloadURL(imageRef);
+      } else {
+        avatarUrl = `https://api.dicebear.com/7.x/avataaars/svg?seed=${formData.name}`;
+      }
+
+      // Save user to Firestore with 'pending' status
+      await setDoc(doc(db, 'users', user.uid), {
+        name: formData.name,
+        email: formData.email,
+        studentId: formData.studentId,
+        avatar: avatarUrl,
+        status: 'pending',
+        joinedDate: new Date().toISOString().split('T')[0],
+        room: '', // To be updated later or by admin
+      });
+
+      // Sign out immediately so they can't access dashboard until approved
+      await signOut(auth);
+
+      alert('Registration successful! Your account is pending admin approval.');
+      navigate('/');
+    } catch (err: any) {
+      setError(err.message || 'Failed to create account');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,6 +117,11 @@ export function RegisterPage() {
           </motion.div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/50 text-red-500 p-3 rounded-lg text-sm text-center">
+                {error}
+              </div>
+            )}
             {/* Profile Image Upload */}
             <motion.div
               className="flex justify-center"
@@ -238,7 +292,7 @@ export function RegisterPage() {
             >
               <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000"></div>
               <UserPlus size={22} />
-              Create Account
+              {loading ? 'Creating Account...' : 'Create Account'}
             </motion.button>
           </form>
 

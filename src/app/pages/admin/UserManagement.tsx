@@ -1,5 +1,7 @@
-import { useState } from 'react';
-import { Edit, RotateCcw, Search } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Edit, RotateCcw, Search, CheckCircle, XCircle } from 'lucide-react';
+import { db } from '../../../lib/firebase';
+import { collection, getDocs, doc, updateDoc } from 'firebase/firestore';
 
 interface User {
   id: number;
@@ -13,60 +15,43 @@ interface User {
 
 export function UserManagement() {
   const [searchQuery, setSearchQuery] = useState('');
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const users: User[] = [
-    {
-      id: 1,
-      name: 'John Doe',
-      email: 'john.doe@example.com',
-      studentId: '2021001234',
-      room: 'Room 201',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=John',
-      joinedDate: '2024-01-15',
-    },
-    {
-      id: 2,
-      name: 'Sarah Lee',
-      email: 'sarah.lee@example.com',
-      studentId: '2021001235',
-      room: 'Room 202',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-      joinedDate: '2024-01-15',
-    },
-    {
-      id: 3,
-      name: 'Imran Ahmed',
-      email: 'imran.ahmed@example.com',
-      studentId: '2021001236',
-      room: 'Room 203',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Imran',
-      joinedDate: '2024-01-15',
-    },
-    {
-      id: 4,
-      name: 'Rahat Khan',
-      email: 'rahat.khan@example.com',
-      studentId: '2021001237',
-      room: 'Room 204',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Rahat',
-      joinedDate: '2024-01-16',
-    },
-    {
-      id: 5,
-      name: 'Mike Chen',
-      email: 'mike.chen@example.com',
-      studentId: '2021001238',
-      room: 'Room 205',
-      avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Mike',
-      joinedDate: '2024-01-16',
-    },
-  ];
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      const usersCol = collection(db, 'users');
+      const userSnapshot = await getDocs(usersCol);
+      const userList = userSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setUsers(userList);
+    } catch (err) {
+      console.error("Failed to fetch users", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateStatus = async (userId: string, newStatus: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), { status: newStatus });
+      setUsers(users.map(u => u.id === userId ? { ...u, status: newStatus } : u));
+    } catch (err) {
+      console.error("Failed to update status", err);
+    }
+  };
 
   const filteredUsers = users.filter(
     (user) =>
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.studentId.includes(searchQuery)
+      user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.studentId?.includes(searchQuery)
   );
 
   return (
@@ -99,6 +84,7 @@ export function UserManagement() {
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">User</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Student ID</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Room</th>
+                <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Status</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Joined Date</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-gray-900">Actions</th>
               </tr>
@@ -116,16 +102,39 @@ export function UserManagement() {
                     </div>
                   </td>
                   <td className="px-6 py-4 text-gray-900">{user.studentId}</td>
-                  <td className="px-6 py-4 text-gray-900">{user.room}</td>
+                  <td className="px-6 py-4 text-gray-900">{user.room || 'N/A'}</td>
+                  <td className="px-6 py-4">
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      user.status === 'approved' ? 'bg-green-100 text-green-700' :
+                      user.status === 'rejected' ? 'bg-red-100 text-red-700' :
+                      'bg-orange-100 text-orange-700'
+                    }`}>
+                      {(user.status || 'approved').toUpperCase()}
+                    </span>
+                  </td>
                   <td className="px-6 py-4 text-gray-600">{user.joinedDate}</td>
                   <td className="px-6 py-4">
                     <div className="flex gap-2">
-                      <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
-                        <Edit size={18} />
-                      </button>
-                      <button className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-all">
-                        <RotateCcw size={18} />
-                      </button>
+                      {user.status === 'pending' && (
+                        <>
+                          <button onClick={() => updateStatus(user.id, 'approved')} title="Approve" className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-all">
+                            <CheckCircle size={18} />
+                          </button>
+                          <button onClick={() => updateStatus(user.id, 'rejected')} title="Reject" className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-all">
+                            <XCircle size={18} />
+                          </button>
+                        </>
+                      )}
+                      {user.status !== 'pending' && (
+                         <>
+                          <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-all">
+                            <Edit size={18} />
+                          </button>
+                          <button className="p-2 text-orange-600 hover:bg-orange-50 rounded-lg transition-all">
+                            <RotateCcw size={18} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
